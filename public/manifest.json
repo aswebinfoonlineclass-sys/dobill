@@ -1,0 +1,22 @@
+{
+  "name": "Do Bill POS",
+  "short_name": "DoBill",
+  "description": "DoBill POS Billing Application - Secure, Offline-First, and Real-Time Multi-Device Sync.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
