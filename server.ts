@@ -6,8 +6,18 @@ import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import net from 'net';
+import dns from 'dns';
 import { createRequire } from 'module';
 import { Resend } from 'resend';
+
+// Force DNS lookup to prioritize IPv4 over IPv6 on environments like Render where IPv6 is not routed
+try {
+  if (dns && typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+  }
+} catch (e) {
+  console.warn("Could not set DNS IPv4 order:", e);
+}
 
 // Load .env file manually at startup to ensure SMTP credentials and secrets are available in process.env
 try {
@@ -72,6 +82,7 @@ async function connectToMongoDB() {
     mongoUri.includes('<username>') || 
     mongoUri.includes('<password>') || 
     mongoUri.includes('YOUR_CONNECTION_STRING') ||
+    mongoUri.includes('DATABASE_NAME') ||
     mongoUri.includes('<cluster_url>');
 
   if (isPlaceholder) {
@@ -323,6 +334,7 @@ async function saveToMongoDB(tableName: string, docId: string | null, data: any)
   if (!db_mongo || !docId) return;
   try {
     const cleanData = JSON.parse(JSON.stringify(data));
+    delete cleanData._id;
     let filter: any = {};
     if (tableName === 'products') {
       const pId = data.product_id || data.id || docId;
@@ -1023,8 +1035,15 @@ async function sendUniversalEmail(options: {
       console.log(`[${context}] RESEND_API_KEY detected. Attempting dispatch via Resend SDK to: ${options.to}`);
       const resend = new Resend(process.env.RESEND_API_KEY);
 
+      // Resend requires a verified domain or the default onboarding@resend.dev domain.
+      // Free/Unverified Resend accounts reject @gmail.com from addresses.
+      let resendFrom = "DoBill <onboarding@resend.dev>";
+      if (process.env.RESEND_FROM_EMAIL && !process.env.RESEND_FROM_EMAIL.toLowerCase().includes('gmail.com')) {
+        resendFrom = process.env.RESEND_FROM_EMAIL;
+      }
+
       const resendRes = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || "DoBill <onboarding@resend.dev>",
+        from: resendFrom,
         to: options.to,
         subject: options.subject,
         html: options.html,
@@ -1066,6 +1085,7 @@ async function sendUniversalEmail(options: {
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '465', 10),
       secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+      family: 4,
       auth: {
         user: process.env.SMTP_USER || email,
         pass: process.env.SMTP_PASS || pass
@@ -1077,11 +1097,12 @@ async function sendUniversalEmail(options: {
     });
   }
 
-  // Always append standard Gmail secure configurations as fallbacks or primary options
+  // Always append standard Gmail secure configurations with IPv4 family parameter to prevent ENETUNREACH on cloud hosts
   if (email.toLowerCase().endsWith('gmail.com')) {
     transportConfigs.push({
       service: 'gmail',
       auth: { user: email, pass: pass },
+      family: 4,
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000,
@@ -1093,6 +1114,7 @@ async function sendUniversalEmail(options: {
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      family: 4,
       auth: { user: email, pass: pass },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
@@ -1103,6 +1125,7 @@ async function sendUniversalEmail(options: {
       host: 'smtp.gmail.com',
       port: 587,
       secure: false,
+      family: 4,
       auth: { user: email, pass: pass },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
@@ -2909,6 +2932,11 @@ Thank you for choosing DO BILL.
         if (!user && cleanEmail.includes('@gmail.com')) {
           const prefix = cleanEmail.replace('@gmail.com', '');
           user = db.prepare("SELECT * FROM app_users WHERE email = ?").get(prefix) as any;
+        }
+
+        // D. Fallback search by workspace_owner
+        if (!user) {
+          user = db.prepare("SELECT * FROM app_users WHERE workspace_owner = ?").get(cleanEmail) as any;
         }
       }
 

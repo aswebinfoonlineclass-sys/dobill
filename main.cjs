@@ -38,28 +38,43 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
-ipcMain.handle('print-silent', async (event, htmlContent) => {
+ipcMain.handle('print-silent', async (event, htmlContent, printOptions = {}) => {
   return new Promise((resolve, reject) => {
     let workerWindow = new BrowserWindow({
       show: false,
+      width: 800,
+      height: 600,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
       }
     });
 
-    // Use a high-fidelity data URL to load the HTML receipt
+    // Use a high-fidelity data URL to load the HTML content
     workerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
 
+    const isLandscape = printOptions.landscape || (typeof htmlContent === 'string' && htmlContent.toLowerCase().includes('landscape'));
+
+    const options = {
+      silent: true,
+      printBackground: true,
+      margins: { marginType: 'none' },
+      landscape: isLandscape,
+      ...printOptions
+    };
+
     workerWindow.webContents.on('did-finish-load', () => {
-      workerWindow.webContents.print({ silent: true }, (success, failureReason) => {
-        workerWindow.close();
-        if (success) {
-          resolve(true);
-        } else {
-          reject(new Error(failureReason || 'Printing failed'));
-        }
-      });
+      // Allow Chromium layout and SVG rendering engine to settle before executing print
+      setTimeout(() => {
+        workerWindow.webContents.print(options, (success, failureReason) => {
+          workerWindow.close();
+          if (success) {
+            resolve(true);
+          } else {
+            reject(new Error(failureReason || 'Printing failed'));
+          }
+        });
+      }, 300);
     });
   });
 });
@@ -80,7 +95,7 @@ function createWindow() {
   // Give the Express server a moment to start, then load the live web URL (for real-time sync)
   // falling back to local offline mode if there is no internet connection.
   setTimeout(() => {
-    const hostedUrl = 'https://ais-dev-iemwaso7pqjgzlnwnnhjr4-811596351259.asia-southeast1.run.app';
+    const hostedUrl = 'https://dobill2.onrender.com/';
     mainWindow.loadURL(hostedUrl).catch((err) => {
       console.log('Failed to load live cloud URL, falling back to local offline mode:', err.message);
       mainWindow.loadURL('http://localhost:3000').catch((localErr) => {

@@ -636,6 +636,7 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
   const shopAddress = shopDetails?.address || '';
   const shopPhone = shopDetails?.phone || '';
   const is80 = (shopDetails?.paperSize || '80mm') === '80mm';
+  const paperVal = is80 ? '80mm' : '58mm';
   const widthVal = is80 ? '72mm' : '52mm';
 
   const customerRows = [];
@@ -687,8 +688,30 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
   ` : '';
 
   return `
-    <div class="thermal-receipt" style="width: ${widthVal}; margin: 0 auto; color: black; background: white; font-family: 'Courier New', Courier, monospace; font-size: 11px; padding: 1mm 1mm 15mm 1mm;">
-      <div class="receipt-header" style="text-align: center; margin-bottom: 2mm;">
+    <style>
+      @media print {
+        @page {
+          margin: 0 !important;
+          size: ${paperVal} auto !important;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: ${paperVal} !important;
+          background: white !important;
+        }
+        .thermal-receipt {
+          width: ${widthVal} !important;
+          max-width: 100% !important;
+          margin: 0 auto !important;
+          padding: 1mm 1mm 2mm 1mm !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+      }
+    </style>
+    <div class="thermal-receipt" style="width: ${widthVal}; margin: 0 auto; color: black; background: white; font-family: 'Courier New', Courier, monospace; font-size: 11px; padding: 1mm 1mm 2mm 1mm; page-break-inside: avoid; break-inside: avoid;">
+      <div class="receipt-header" style="text-align: center; margin-bottom: 2mm; page-break-inside: avoid; break-inside: avoid;">
         ${shopDetails?.logo ? `
           <div style="text-align: center; margin-bottom: 2mm;">
             <img src="${shopDetails.logo}" style="height: 14mm; width: 14mm; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0; display: inline-block;" />
@@ -701,7 +724,7 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
       
       <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
       
-      <div class="receipt-info-grid" style="font-size: 10px; margin-bottom: 2mm; width: 100%; font-weight: 600;">
+      <div class="receipt-info-grid" style="font-size: 10px; margin-bottom: 2mm; width: 100%; font-weight: 600; page-break-inside: avoid; break-inside: avoid;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 0.5mm;">
           <span>Bill No:</span>
           <span style="font-weight: bold;">${sale.invoiceNumber}</span>
@@ -723,7 +746,7 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
       
       <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
       
-      <table class="receipt-table" style="width: 100%; border-collapse: collapse; font-size: 10px; margin: 1mm 0;">
+      <table class="receipt-table" style="width: 100%; border-collapse: collapse; font-size: 10px; margin: 1mm 0; page-break-inside: avoid; break-inside: avoid;">
         <thead>
           <tr style="border-bottom: 1.5px solid black;">
             <th style="text-align: left; padding: 1.5mm 0; font-weight: 700; text-transform: uppercase;">ITEM</th>
@@ -738,7 +761,7 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
       
       <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
       
-      <div class="totals-area" style="font-size: 11px; padding: 1mm 0; font-weight: 700;">
+      <div class="totals-area" style="font-size: 11px; padding: 1mm 0; font-weight: 700; page-break-inside: avoid; break-inside: avoid;">
         <div style="display: flex; justify-content: space-between;">
           <span>Subtotal:</span>
           <span>₹${sale.subtotal.toFixed(2)}</span>
@@ -755,7 +778,7 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
       
       <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
       
-      <div class="payment-info" style="font-size: 10px; margin-top: 1.5mm; font-weight: 600;">
+      <div class="payment-info" style="font-size: 10px; margin-top: 1.5mm; font-weight: 600; page-break-inside: avoid; break-inside: avoid;">
         <div style="display: flex; justify-content: space-between; text-transform: uppercase;">
           <span>Mode:</span>
           <span style="font-weight: 900;">${sale.paymentMode}</span>
@@ -765,10 +788,10 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
       
       <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
       
-      <div class="receipt-footer" style="text-align: center; margin-top: 4mm; font-size: 9px; padding-bottom: 10mm;">
+      <div class="receipt-footer" style="text-align: center; margin-top: 2mm; font-size: 9px; padding-bottom: 1mm; page-break-inside: avoid; break-inside: avoid;">
         <p style="font-weight: 900; font-size: 11px; margin-bottom: 0.5mm;">THANK YOU FOR SHOPPING!</p>
         <p style="font-size: 8px; margin-top: 1mm; font-weight: bold;">Items once sold cannot be returned.</p>
-        <p style="font-size: 8px; margin-top: 3mm; border-top: 1px solid black; padding-top: 1.5mm; font-weight: bold;">POWERED BY DO BILL</p>
+        <p style="font-size: 8px; margin-top: 2mm; border-top: 1px solid black; padding-top: 1mm; font-weight: bold;">POWERED BY DO BILL</p>
       </div>
     </div>
   `;
@@ -781,59 +804,6 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
  * Universal print function that works on Web, Android WebView, Capacitor APK, and Desktop
  */
 export const universalPrintHTML = async (htmlContent: string): Promise<{ success: boolean; message: string }> => {
-  const isCapacitorNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
-  
-  if (isCapacitorNative) {
-    try {
-      const { Print } = await import('capacitor-print');
-      
-      // 1. Create a style element that hides the main app and only shows the printable overlay
-      const printStyle = document.createElement('style');
-      printStyle.id = 'dobill-capacitor-native-print-style';
-      printStyle.innerHTML = `
-        @media print, screen {
-          #root, .no-print {
-            display: none !important;
-          }
-          .capacitor-print-overlay {
-            display: block !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-          }
-        }
-      `;
-      document.head.appendChild(printStyle);
-
-      // 2. Create the container div with the custom HTML content
-      const printContainer = document.createElement('div');
-      printContainer.className = 'capacitor-print-overlay';
-      printContainer.innerHTML = htmlContent;
-      document.body.appendChild(printContainer);
-
-      // 3. Trigger native print manager
-      await Print.print();
-
-      // 4. Clean up after a short delay
-      setTimeout(() => {
-        if (document.body.contains(printContainer)) {
-          document.body.removeChild(printContainer);
-        }
-        if (document.head.contains(printStyle)) {
-          document.head.removeChild(printStyle);
-        }
-      }, 1500);
-
-      return { success: true, message: "Native Print Successful" };
-    } catch (err: any) {
-      console.warn('[DirectPrint] Capacitor Native Print failed, using fallback:', err);
-    }
-  }
-
   // Fallback 1: Hidden Iframe Printing (Works in almost all Mobile/Android WebViews and browsers)
   try {
     const iframe = document.createElement('iframe');
@@ -1020,8 +990,10 @@ export const handlePrint = async (sale: Sale): Promise<{ success: boolean; messa
                     width: ${printableWidth} !important;
                     max-width: ${printableWidth} !important;
                     margin: 0 auto !important;
-                    padding: 1mm 1mm 15mm 1mm !important;
+                    padding: 1mm 1mm 2mm 1mm !important;
                     box-sizing: border-box !important;
+                    page-break-inside: avoid !important;
+                    break-inside: avoid !important;
                   }
                 }
               </style>
@@ -1092,8 +1064,10 @@ export const handlePrint = async (sale: Sale): Promise<{ success: boolean; messa
             width: ${printableWidth} !important;
             max-width: ${printableWidth} !important;
             margin: 0 auto !important;
-            padding: 1mm 1mm 15mm 1mm !important;
+            padding: 1mm 1mm 2mm 1mm !important;
             box-sizing: border-box !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `;

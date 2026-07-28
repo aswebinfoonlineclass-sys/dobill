@@ -54,22 +54,6 @@
     }
 }
 
-@media print {
-  body {
-    background: white !important;
-    color: black !important;
-  }
-  .no-print, [role="dialog"], [data-radix-portal], [data-sonner-toaster] {
-    display: none !important;
-  }
-  .print-only {
-    display: block !important;
-  }
-  body.printing-active > *:not(.print-container-overlay) {
-    display: none !important;
-  }
-}
-
 .animate-bounce-x {
   animation: bounce-x 1s infinite;
 }
@@ -164,7 +148,7 @@
 }
 
 @media print {
-  .no-print {
+  .no-print, [role="dialog"], [data-radix-portal], [data-sonner-toaster] {
     display: none !important;
   }
   
@@ -172,7 +156,8 @@
     display: block !important;
   }
 
-  body.printing-active #root {
+  body.printing-active #root,
+  body.printing-active > *:not(.print-container-overlay) {
     display: none !important;
   }
 
@@ -187,21 +172,34 @@
 
   body {
     background: white !important;
+    color: black !important;
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   @page {
-    margin: 0;
-    size: 58mm; /* Standard thermal printer width for EZO 58D */
+    margin: 0 !important;
+    size: auto;
   }
 
-  .receipt-container {
-    width: 54mm !important;
-    margin: 0 !important;
-    padding: 1mm !important;
+  .receipt-container, .thermal-receipt {
+    width: auto !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 1mm 1mm 2mm 1mm !important;
     border: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-before: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  tr, td, th, div, p {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 

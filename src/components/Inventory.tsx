@@ -200,6 +200,13 @@ export default function Inventory() {
     const [labelWidth, labelHeight] = labelSize.split('x').map(n => parseInt(n));
     const totalLabels = isRoll ? printQuantity : (printQuantity * 24);
 
+    console.log("=== BARCODE PRINT RUNTIME VALUES ===");
+    console.log("labelWidth:", labelWidth);
+    console.log("labelHeight:", labelHeight);
+    console.log("isRoll:", isRoll);
+    console.log("labelSize (raw):", labelSize);
+    console.log("@page Rule:", `@page { size: ${isRoll ? `${labelWidth}mm ${labelHeight}mm` : 'A4 portrait'} !important; margin: ${isRoll ? '0' : '8mm'} !important; }`);
+
     const product = products.find(p => p.barcode === selectedBarcode);
     const name = product?.name || 'Product';
     const price = product?.sellingPrice || 0;
@@ -211,24 +218,27 @@ export default function Inventory() {
       const clonedSvg = rawSvgElement.cloneNode(true) as SVGElement;
       clonedSvg.removeAttribute('width');
       clonedSvg.removeAttribute('height');
-      clonedSvg.setAttribute('style', 'width: 94%; height: 100%; max-height: 100%; display: block; margin: 0 auto;');
+      clonedSvg.setAttribute('style', 'width: 100%; height: 100%; max-height: 100%; display: block; margin: 0 auto;');
       svgHTML = clonedSvg.outerHTML;
     }
 
-    const labelsHTML = Array(totalLabels).fill(0).map(() => `
-      <div class="label-card">
-        <div class="label-inner">
-          <div class="brand">${brand}</div>
-          <div class="barcode-container">${svgHTML}</div>
-          <div class="product-info">
-            <div class="name">${name}</div>
-            <div class="price">₹${price}</div>
+    const labelsHTML = Array(totalLabels).fill(0).map((_, index) => {
+      const isSheetPageBreak = !isRoll && ((index + 1) % 24 === 0);
+      return `
+        <div class="label-card ${isRoll || isSheetPageBreak ? 'page-break' : ''}">
+          <div class="label-inner">
+            <div class="brand">${brand}</div>
+            <div class="barcode-container">${svgHTML}</div>
+            <div class="product-info">
+              <div class="name">${name}</div>
+              <div class="price">₹${price}</div>
+            </div>
           </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
-    return `
+    const generatedHTML = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -238,13 +248,13 @@ export default function Inventory() {
           <style>
             @media print, screen {
               @page {
-                size: ${labelWidth}mm ${labelHeight}mm !important;
-                margin: 0 !important;
+                size: ${isRoll ? `${labelWidth}mm ${labelHeight}mm` : 'A4 portrait'} !important;
+                margin: ${isRoll ? '0' : '8mm'} !important;
               }
               html, body { 
                 margin: 0 !important; 
                 padding: 0 !important; 
-                width: ${labelWidth}mm !important;
+                width: ${isRoll ? `${labelWidth}mm` : '100%'} !important;
                 height: auto !important;
                 overflow: visible !important;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
@@ -254,7 +264,7 @@ export default function Inventory() {
               }
               .barcode-print-overlay {
                 display: block !important;
-                width: ${labelWidth}mm !important;
+                width: ${isRoll ? `${labelWidth}mm` : '100%'} !important;
                 height: auto !important;
                 position: static !important;
                 margin: 0 !important;
@@ -262,30 +272,34 @@ export default function Inventory() {
                 background: white !important;
               }
               .container {
-                display: block !important;
-                width: ${labelWidth}mm !important;
+                display: ${isRoll ? 'block' : 'grid'} !important;
+                ${!isRoll ? 'grid-template-columns: repeat(3, 1fr) !important; gap: 3.5mm !important;' : ''}
+                width: ${isRoll ? `${labelWidth}mm` : '100%'} !important;
                 height: auto !important;
                 margin: 0 !important;
                 padding: 0 !important;
               }
               .label-card {
-                width: ${labelWidth}mm !important; 
-                height: ${labelHeight}mm !important; 
-                max-height: ${labelHeight}mm !important; 
+                width: ${isRoll ? `${labelWidth}mm` : '100%'} !important; 
+                height: ${isRoll ? `${labelHeight}mm` : '32mm'} !important; 
+                max-height: ${isRoll ? `${labelHeight}mm` : '32mm'} !important; 
                 box-sizing: border-box !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
                 justify-content: space-between !important;
                 text-align: center !important;
-                page-break-after: always !important;
-                break-after: page !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
                 margin: 0 !important;
-                padding: 0.8mm !important;
+                padding: 0.5mm 0.8mm !important;
                 background: white !important;
                 overflow: hidden !important;
+                ${!isRoll ? 'border: 1px dashed #cbd5e1 !important; border-radius: 4px !important;' : ''}
+              }
+              .label-card.page-break {
+                page-break-after: always !important;
+                break-after: page !important;
               }
               .label-inner {
                 width: 100% !important;
@@ -296,13 +310,13 @@ export default function Inventory() {
                 justify-content: space-between !important;
                 text-align: center !important;
                 box-sizing: border-box !important;
-                padding: 0.5mm !important;
+                padding: 0.2mm !important;
               }
               .brand { 
-                font-size: 8pt !important; 
+                font-size: 8.5pt !important; 
                 font-weight: 900 !important; 
                 text-transform: uppercase !important; 
-                letter-spacing: 0.4px !important;
+                letter-spacing: 0.5px !important;
                 color: black !important;
                 white-space: nowrap !important;
                 overflow: hidden !important;
@@ -310,20 +324,22 @@ export default function Inventory() {
                 width: 100% !important;
                 line-height: 1.1 !important;
                 text-align: center !important;
+                margin-bottom: 0.2mm !important;
               }
               .barcode-container {
                 width: 100% !important;
+                flex: 1 !important;
                 display: flex !important;
                 justify-content: center !important;
                 align-items: center !important;
-                margin: 0.3mm 0 !important;
-                height: calc(${labelHeight}mm * 0.48) !important;
-                max-height: calc(${labelHeight}mm * 0.48) !important;
+                margin: 0.2mm 0 !important;
+                min-height: 0 !important;
                 overflow: hidden !important;
               }
               svg { 
-                width: 94% !important; 
+                width: 100% !important; 
                 height: 100% !important; 
+                max-width: 100% !important; 
                 max-height: 100% !important; 
                 display: block !important;
                 margin: 0 auto !important;
@@ -335,11 +351,12 @@ export default function Inventory() {
                 flex-direction: row !important;
                 justify-content: space-between !important;
                 align-items: center !important;
-                padding: 0 0.8mm !important;
+                padding: 0 0.5mm !important;
                 box-sizing: border-box !important;
+                margin-top: 0.2mm !important;
               }
               .name { 
-                font-size: 7.5pt !important; 
+                font-size: 8pt !important; 
                 font-weight: 800 !important; 
                 white-space: nowrap !important; 
                 overflow: hidden !important; 
@@ -350,11 +367,12 @@ export default function Inventory() {
                 text-align: left !important;
               }
               .price { 
-                font-size: 10pt !important; 
+                font-size: 9.5pt !important; 
                 font-weight: 950 !important; 
                 color: black !important;
                 text-align: right !important;
                 font-family: monospace, sans-serif !important;
+                white-space: nowrap !important;
               }
             }
           </style>
@@ -366,21 +384,38 @@ export default function Inventory() {
         </body>
       </html>
     `;
+
+    console.log("=== INJECTED HTML FOR ELECTRON / PRINT WINDOW ===");
+    console.log(generatedHTML);
+
+    return generatedHTML;
   };
 
   const handlePrint = async () => {
     const fullHTML = generateBarcodeFullHTML();
     if (!fullHTML) return;
 
+    const isRoll = printMode === 'roll';
+    const [labelWidth, labelHeight] = labelSize.split('x').map(n => parseInt(n));
     const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
     const toastId = toast.loading(
       isElectron ? "🖨️ Electron silent barcode printing initialized..." : "🖨️ Opening print manager..."
     );
 
+    const printOptions = isRoll ? {
+      pageSize: {
+        width: labelWidth * 1000,
+        height: labelHeight * 1000
+      },
+      margins: { marginType: 'none' }
+    } : {
+      margins: { marginType: 'none' }
+    };
+
     try {
       if (isElectron) {
-        await (window as any).electronAPI.printSilent(fullHTML);
+        await (window as any).electronAPI.printSilent(fullHTML, printOptions);
         toast.dismiss(toastId);
         toast.success("Barcodes Printed Successfully!");
       } else {

@@ -118,16 +118,16 @@ export const checkIsNativeCapacitor = (): boolean => {
 
 const getAppUrl = (): string => {
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin;
+    const origin = window.location.origin;
+    if (checkIsNativeCapacitor() || checkIsCapacitor() || origin.includes('localhost')) {
+      return 'https://dobill2.onrender.com';
+    }
+    return origin;
   }
-  try {
-    return process.env.APP_URL || "";
-  } catch (e) {
-    return "";
-  }
+  return 'https://dobill2.onrender.com';
 };
 
-// Helper to resolve backend server URLs on Web browsers
+// Helper to resolve backend server URLs on Web browsers and Native Android APKs
 const getBackendUrl = (url: string): string => {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
@@ -139,12 +139,23 @@ const getBackendUrl = (url: string): string => {
     localStorage.removeItem('dobill_force_offline');
   }
 
-  // Route dynamically to the current origin (e.g. your active website, custom domain, or local host)
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}${url}`;
+    const origin = window.location.origin;
+    const isCapacitorOrNative = checkIsCapacitor() || checkIsNativeCapacitor() || window.location.protocol === 'file:' || window.location.protocol === 'capacitor:' || origin === 'https://localhost' || origin === 'http://localhost' || (origin.includes('localhost') && !origin.includes(':3000'));
+
+    // In Android APK / Capacitor / Android Studio Emulator, origin is "https://localhost" or "http://localhost".
+    // Directing relative API requests to localhost on mobile fails because no backend runs inside the phone.
+    // Automatically point to the live Render production backend (https://dobill2.onrender.com) for mobile & Capacitor builds.
+    if (isCapacitorOrNative) {
+      const path = url.startsWith('/') ? url : `/${url}`;
+      return `https://dobill2.onrender.com${path}`;
+    }
+
+    return `${origin}${url}`;
   }
 
-  return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  return `https://dobill2.onrender.com${path}`;
 };
 
 // Global transparent native/web window.fetch wrapper with Proxy to reliably bypass Response read-only property constraints
@@ -193,16 +204,32 @@ const wrapResponseWithSafeJson = (res: Response, finalUrl: string): Response => 
   });
 };
 
-const customFetch = async (url: string, options?: RequestInit): Promise<Response> => {
+const customFetch = async (url: string, options?: RequestInit, retryCount = 0): Promise<Response> => {
   const finalUrl = getBackendUrl(url);
+  const isNativeOrCapacitor = checkIsCapacitor() || checkIsNativeCapacitor() || (typeof window !== 'undefined' && (window.location.origin.includes('localhost') || window.location.protocol === 'file:' || window.location.protocol === 'capacitor:'));
+
   try {
     const res = await window.fetch(finalUrl, options);
+    // If Render or host returns 502/503/504 Bad Gateway due to cold-start spin up, auto-retry up to 4 times
+    if ((res.status === 502 || res.status === 503 || res.status === 504) && retryCount < 4) {
+      console.warn(`[DataService] Server at ${finalUrl} returned status ${res.status} (likely Render spin-up). Retrying in 3 seconds... (Attempt ${retryCount + 1}/4)`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      return customFetch(url, options, retryCount + 1);
+    }
     return wrapResponseWithSafeJson(res, finalUrl);
   } catch (error: any) {
-    // If we were using a custom server URL or external host and it failed, 
-    // gracefully attempt a fallback to the default relative sandbox URL to auto-heal.
-    if (finalUrl !== url) {
-      console.log(`[DataService] Sandbox check: resolved path ${url}.`);
+    // Retry on temporary network/fetch failures or Render spin-ups if retryCount < 4
+    if (retryCount < 4 && (error.message?.includes('502') || error.message?.includes('503') || error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError'))) {
+      console.warn(`[DataService] Temporary fetch error for ${finalUrl}: ${error.message}. Retrying in 3 seconds... (Attempt ${retryCount + 1}/4)`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      return customFetch(url, options, retryCount + 1);
+    }
+
+    // NEVER fall back to relative URL on Native / Mobile / Capacitor!
+    // Relative URL on mobile attempts window.fetch("/api/...") which resolves to https://localhost/api/...
+    // returning index.html (Status 200) from Capacitor's internal asset server instead of Express backend.
+    if (!isNativeOrCapacitor && finalUrl !== url) {
+      console.log(`[DataService] Web Sandbox check: resolved path ${url}.`);
       try {
         const res = await window.fetch(url, options);
         return wrapResponseWithSafeJson(res, url);
@@ -217,8 +244,7 @@ const customFetch = async (url: string, options?: RequestInit): Promise<Response
     }
     throw new Error(
       `Network Connection Failed. Target Address: "${finalUrl}". ` +
-      `Please ensure your mobile device has active internet. You can also configure a custom IP address or backend server ` +
-      `using the 'Server IP Pair' gear button at the bottom right of the screen.`
+      `Please ensure your server is running and your device has active internet.`
     );
   }
 };
