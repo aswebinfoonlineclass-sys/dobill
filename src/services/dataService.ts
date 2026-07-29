@@ -120,11 +120,11 @@ const getAppUrl = (): string => {
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
     const origin = window.location.origin;
     if (checkIsNativeCapacitor() || checkIsCapacitor() || origin.includes('localhost')) {
-      return 'https://dobill2.onrender.com';
+      return 'https://dobill2-pl2w.onrender.com/';
     }
     return origin;
   }
-  return 'https://dobill2.onrender.com';
+  return 'https://dobill2-pl2w.onrender.com/';
 };
 
 // Helper to resolve backend server URLs on Web browsers and Native Android APKs
