@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { compressImageFile } from '@/utils/imageCompressor';
 import { Badge } from '@/components/ui/badge';
 import { 
   Dialog, 
@@ -93,22 +94,22 @@ export default function Inventory() {
     }
   });
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setEditingProduct(prev => ({ ...prev, imageUrl: reader.result as string }));
+    try {
+      // Compress any product image (even huge camera photos) to ultra-small WebP/JPEG bytes (~10-40 KB)
+      const compressedDataUrl = await compressImageFile(file, { maxWidth: 500, maxHeight: 500, quality: 0.75 });
+      setEditingProduct(prev => ({ ...prev, imageUrl: compressedDataUrl, image_url: compressedDataUrl }));
+      toast.success("Product image compressed & ready!");
+    } catch (err) {
+      console.error("Product image compression error:", err);
+      toast.error("Failed to process product image");
+    } finally {
       setIsUploading(false);
-      toast.success("Image uploaded successfully");
-    };
-    reader.onerror = () => {
-      setIsUploading(false);
-      toast.error("Failed to read file");
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const filteredProducts = useMemo(() => {
