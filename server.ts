@@ -1955,44 +1955,197 @@ async function startServer() {
     }
   });
 
-  // Serves the genuine Windows 1-Click Setup Installer (.exe)
-  app.get('/api/download/windows-setup', (req, res) => {
-    try {
-      const distDesktopDir = path.join(process.cwd(), 'dist_desktop');
-      const exeFileName = 'DoBillPOS Setup 0.0.0.exe';
-      const exeFilePath = path.join(distDesktopDir, exeFileName);
-      
-      if (fs.existsSync(exeFilePath)) {
-        console.log(`[Downloader] Serving compiled Windows 1-Click Installer Setup (.exe): ${exeFileName}`);
-        res.setHeader('Content-Type', 'application/x-msdownload');
-        res.setHeader('Content-Disposition', `attachment; filename="${exeFileName}"`);
-        return res.sendFile(exeFilePath);
-      } else {
-        return res.status(404).send("Compiled Windows 1-Click Installer Setup (.exe) not found on server yet. Please compile using npm run electron:build.");
+  // API metadata endpoint for download section
+  app.get('/api/download/info', (req, res) => {
+    res.json({
+      latestVersion: "1.2.4",
+      releaseDate: "July 2026",
+      supportedOS: "Windows 11, 10, 8, 7 & Android 8.0+",
+      downloadsAvailable: [
+        "windows-setup-x64",
+        "windows-setup-ia32",
+        "windows-setup-arm64",
+        "windows-zip-x64",
+        "windows-zip-ia32",
+        "windows-zip-arm64",
+        "android-apk"
+      ]
+    });
+  });
+
+  // Ensure download packages exist on disk
+  try {
+    const prepareScriptPath = path.join(process.cwd(), 'scripts', 'prepare-downloads.js');
+    if (fs.existsSync(prepareScriptPath)) {
+      require(prepareScriptPath);
+    }
+  } catch (prepErr) {
+    console.warn('[Server] Error running prepare-downloads script:', prepErr);
+  }
+
+  // Helper function to find existing files in dist_desktop or fallback directories
+  const resolveDistDesktopFile = (requestedFilename: string, archType?: 'exe' | 'x64' | 'ia32' | 'arm64' | 'apk') => {
+    const distDir = path.join(process.cwd(), 'dist_desktop');
+    const publicDir = path.join(process.cwd(), 'public', 'downloads');
+    const downloadsDir = path.join(process.cwd(), 'downloads');
+    const androidReleaseDir = path.join(process.cwd(), 'android', 'app', 'build', 'outputs', 'apk', 'release');
+    const androidDebugDir = path.join(process.cwd(), 'android', 'app', 'build', 'outputs', 'apk', 'debug');
+
+    // 1. Direct file search across all known release directories
+    const searchDirs = [distDir, androidReleaseDir, androidDebugDir, publicDir, downloadsDir];
+    for (const dir of searchDirs) {
+      if (fs.existsSync(dir)) {
+        const directPath = path.join(dir, requestedFilename);
+        if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+          return { filePath: directPath, filename: requestedFilename };
+        }
       }
+    }
+
+    // 2. APK search fallback
+    if (archType === 'apk' || requestedFilename.endsWith('.apk')) {
+      for (const dir of [androidReleaseDir, androidDebugDir, distDir, publicDir, downloadsDir]) {
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          const apkFile = files.find(f => f.endsWith('.apk'));
+          if (apkFile) {
+            return { filePath: path.join(dir, apkFile), filename: apkFile };
+          }
+        }
+      }
+    }
+
+    // 3. Flexible search inside dist_desktop
+    if (fs.existsSync(distDir)) {
+      const files = fs.readdirSync(distDir);
+      
+      // Case-insensitive exact match
+      const exactMatch = files.find(f => f.toLowerCase() === requestedFilename.toLowerCase());
+      if (exactMatch) return { filePath: path.join(distDir, exactMatch), filename: exactMatch };
+
+      // Architecture matching
+      if (archType === 'exe' || requestedFilename.endsWith('.exe')) {
+        const match = files.find(f => f.endsWith('.exe')) || files.find(f => f.toLowerCase().includes('setup'));
+        if (match) return { filePath: path.join(distDir, match), filename: match };
+      }
+      if (archType === 'ia32' || requestedFilename.includes('ia32') || requestedFilename.includes('x86')) {
+        const match = files.find(f => f.endsWith('.zip') && (f.includes('ia32') || f.includes('x86')));
+        if (match) return { filePath: path.join(distDir, match), filename: match };
+      }
+      if (archType === 'arm64' || requestedFilename.includes('arm64')) {
+        const match = files.find(f => f.endsWith('.zip') && f.includes('arm64'));
+        if (match) return { filePath: path.join(distDir, match), filename: match };
+      }
+      if (archType === 'x64' || requestedFilename.includes('win.zip') || requestedFilename.includes('x64')) {
+        const match = files.find(f => f.endsWith('.zip') && !f.includes('ia32') && !f.includes('arm64')) || files.find(f => f.endsWith('.zip'));
+        if (match) return { filePath: path.join(distDir, match), filename: match };
+      }
+
+      // Fallbacks
+      const anyExe = files.find(f => f.endsWith('.exe'));
+      if (anyExe) return { filePath: path.join(distDir, anyExe), filename: anyExe };
+      const anyZip = files.find(f => f.endsWith('.zip'));
+      if (anyZip) return { filePath: path.join(distDir, anyZip), filename: anyZip };
+    }
+
+    return null;
+  };
+
+  // Endpoint handling /downloads/:filename
+  app.get('/downloads/:filename', (req, res) => {
+    try {
+      const filename = req.params.filename;
+      let archType: 'exe' | 'x64' | 'ia32' | 'arm64' | 'apk' | undefined;
+      if (filename.includes('ia32') || filename.includes('x86')) archType = 'ia32';
+      else if (filename.includes('arm64')) archType = 'arm64';
+      else if (filename.endsWith('.exe')) archType = 'exe';
+      else if (filename.endsWith('.zip')) archType = 'x64';
+      else if (filename.endsWith('.apk')) archType = 'apk';
+
+      const fileObj = resolveDistDesktopFile(filename, archType);
+      if (fileObj) {
+        console.log(`[Downloader] Serving dist_desktop file: ${fileObj.filePath}`);
+        if (fileObj.filename.endsWith('.exe')) res.setHeader('Content-Type', 'application/x-msdownload');
+        else if (fileObj.filename.endsWith('.zip')) res.setHeader('Content-Type', 'application/zip');
+        else if (fileObj.filename.endsWith('.apk')) res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.sendFile(fileObj.filePath);
+      }
+
+      return res.status(404).send(`File ${filename} not found in dist_desktop.`);
     } catch (err: any) {
-      res.status(500).send("Error serving Windows application: " + err.message);
+      return res.status(500).send("Error serving file: " + err.message);
     }
   });
 
-  // Serves the full portable compiled Windows application package (.zip)
-  app.get('/api/download/windows', (req, res) => {
-    try {
-      const distDesktopDir = path.join(process.cwd(), 'dist_desktop');
-      const zipFileName = 'DoBillPOS-0.0.0-win.zip';
-      const zipFilePath = path.join(distDesktopDir, zipFileName);
-      
-      if (fs.existsSync(zipFilePath)) {
-        console.log(`[Downloader] Serving native compiled Windows portable ZIP: ${zipFileName}`);
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
-        return res.sendFile(zipFilePath);
-      } else {
-        return res.status(404).send("Compiled Windows package (.zip) not found on server yet. Please compile using npm run electron:build.");
-      }
-    } catch (err: any) {
-      res.status(500).send("Error serving Windows application: " + err.message);
+  // Dedicated download API endpoints
+  app.get('/api/download/windows-setup', (req, res) => {
+    const fileObj = resolveDistDesktopFile('DoBillPOS Setup 1.0.0.exe', 'exe');
+    if (fileObj) {
+      res.setHeader('Content-Type', 'application/x-msdownload');
+      res.setHeader('Content-Disposition', `attachment; filename="DoBillPOS Setup 1.0.0.exe"`);
+      return res.sendFile(fileObj.filePath);
     }
+    return res.status(404).send("Windows Setup EXE file not found in dist_desktop.");
+  });
+
+  app.get('/api/download/windows-x64-zip', (req, res) => {
+    const fileObj = resolveDistDesktopFile('DoBillPOS-1.0.0-win.zip', 'x64');
+    if (fileObj) {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="DoBillPOS-1.0.0-win.zip"`);
+      return res.sendFile(fileObj.filePath);
+    }
+    return res.status(404).send("Windows x64 ZIP package not found in dist_desktop.");
+  });
+
+  app.get('/api/download/windows-ia32-zip', (req, res) => {
+    const fileObj = resolveDistDesktopFile('DoBillPOS-1.0.0-ia32-win.zip', 'ia32');
+    if (fileObj) {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="DoBillPOS-1.0.0-ia32-win.zip"`);
+      return res.sendFile(fileObj.filePath);
+    }
+    return res.status(404).send("Windows 32-bit (x86) ZIP package not found in dist_desktop.");
+  });
+
+  app.get('/api/download/windows-arm64-zip', (req, res) => {
+    const fileObj = resolveDistDesktopFile('DoBillPOS-1.0.0-arm64-win.zip', 'arm64');
+    if (fileObj) {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="DoBillPOS-1.0.0-arm64-win.zip"`);
+      return res.sendFile(fileObj.filePath);
+    }
+    return res.status(404).send("Windows ARM64 ZIP package not found in dist_desktop.");
+  });
+
+  app.get('/api/download/windows', (req, res) => {
+    const fileObj = resolveDistDesktopFile('DoBillPOS-1.0.0-win.zip', 'x64');
+    if (fileObj) {
+      res.setHeader('Content-Type', fileObj.filename.endsWith('.exe') ? 'application/x-msdownload' : 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileObj.filename}"`);
+      return res.sendFile(fileObj.filePath);
+    }
+    return res.status(404).send("Windows download package not found in dist_desktop.");
+  });
+
+  app.get('/api/download/android', (req, res) => {
+    const fileObj = resolveDistDesktopFile('DoBillPOS.apk', 'apk');
+    if (fileObj && fileObj.filePath.endsWith('.apk')) {
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', `attachment; filename="DoBillPOS.apk"`);
+      return res.sendFile(fileObj.filePath);
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="DoBillPOS_Android_Guide.txt"');
+    return res.send(`====================================================
+DO BILL POS - ANDROID APPLICATION INSTALLATION
+====================================================
+
+1. Open https://${req.get('host')} in Google Chrome on your Android mobile device or POS tablet.
+2. Tap the Chrome Menu (3 dots at top right).
+3. Select "Install App" or "Add to Home Screen".
+4. DO BILL POS will install as a native standalone PWA on your device!`);
   });
 
   // Serves a lightweight Windows installer package (.cmd) to setup shortcut and install the native app
@@ -3747,6 +3900,47 @@ Thank you for choosing DO BILL.
     }
   });
 
+  // File Download Endpoints for Windows Setup & Android Release APK
+  const serveWindowsInstaller = (req: express.Request, res: express.Response) => {
+    const candidatePaths = [
+      path.join(process.cwd(), 'dist_desktop', 'DoBillPOS Setup 1.0.0.exe'),
+      path.join(process.cwd(), 'public', 'dist_desktop', 'DoBillPOS Setup 1.0.0.exe'),
+      path.join(process.cwd(), 'public', 'downloads', 'DoBillPOS Setup 1.0.0.exe')
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment; filename="DoBillPOS Setup 1.0.0.exe"');
+        return res.download(p, 'DoBillPOS Setup 1.0.0.exe');
+      }
+    }
+    res.status(404).json({ error: 'Windows installer file not found' });
+  };
+
+  const serveAndroidApk = (req: express.Request, res: express.Response) => {
+    const candidatePaths = [
+      path.join(process.cwd(), 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      path.join(process.cwd(), 'public', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      path.join(process.cwd(), 'public', 'downloads', 'app-release.apk')
+    ];
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+        res.setHeader('Content-Disposition', 'attachment; filename="app-release.apk"');
+        return res.download(p, 'app-release.apk');
+      }
+    }
+    res.status(404).json({ error: 'Android APK file not found' });
+  };
+
+  app.get('/dist_desktop/DoBillPOS%20Setup%201.0.0.exe', serveWindowsInstaller);
+  app.get('/dist_desktop/DoBillPOS Setup 1.0.0.exe', serveWindowsInstaller);
+  app.get('/api/download/windows', serveWindowsInstaller);
+  app.get('/api/download/windows-setup', serveWindowsInstaller);
+
+  app.get('/android/app/build/outputs/apk/release/app-release.apk', serveAndroidApk);
+  app.get('/api/download/android', serveAndroidApk);
+
   app.delete('/api/products/:id', (req, res) => {
     try {
       const owner = getWorkspaceOwner(req);
@@ -4496,8 +4690,8 @@ Thank you for choosing DO BILL.
     });
   }
 
-  const PORT = process.env.PORT || 3000;
-  const server = app.listen(Number(PORT), '0.0.0.0', () => {
+  const PORT = 3000;
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('--------------------------------------------------');
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('System developed by: aswebinfo');
@@ -4540,7 +4734,7 @@ Thank you for choosing DO BILL.
       console.error(`Attempting to retry in 1500ms to allow the operating system or previous process to release the port...`);
       setTimeout(() => {
         try {
-          app.listen(Number(PORT), '0.0.0.0', () => {
+          app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server successfully rebounded and is running on http://localhost:${PORT}`);
             runRetentionPolicy();
           });
