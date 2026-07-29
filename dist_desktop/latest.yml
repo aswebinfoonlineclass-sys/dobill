@@ -1,0 +1,8 @@
+version: 1.0.0
+files:
+  - url: DoBillPOS-Setup-1.0.0.exe
+    sha512: OiV47byfkbFrK0UQYqCPkSse9rZPuOULEt2i+wiqbIVqx1+rpd8Vnwb1MjcQF2BrvsW/zIpZXnu9UZcmtFsR+w==
+    size: 288062495
+path: DoBillPOS-Setup-1.0.0.exe
+sha512: OiV47byfkbFrK0UQYqCPkSse9rZPuOULEt2i+wiqbIVqx1+rpd8Vnwb1MjcQF2BrvsW/zIpZXnu9UZcmtFsR+w==
+releaseDate: '2026-07-29T17:13:38.457Z'
