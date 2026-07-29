@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { DataService, ShopDetails } from "@/services/dataService";
 import { toast } from "sonner";
 import { safeSessionStorage, safeLocalStorage } from "@/utils/safeStorage";
+import { compressImageFile } from "@/utils/imageCompressor";
 
 const sessionStorage = safeSessionStorage;
 const localStorage = safeLocalStorage;
@@ -581,58 +582,44 @@ export default function ShopSettings() {
     shopLogoInputRef.current?.click();
   };
 
-  const handleShopLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleShopLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Logo file size must be strictly below 2MB");
-      return;
-    }
-
     setIsLogoUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const logoData = reader.result as string;
+    try {
+      // Compress any image size (even 1GB+) down to ultra-small WebP/JPEG bytes
+      const logoData = await compressImageFile(file, { maxWidth: 500, maxHeight: 500, quality: 0.75 });
       const updatedDetails = { ...details, logo: logoData };
       setDetails(updatedDetails);
       await DataService.setShopDetails(updatedDetails);
+      toast.success("Shop logo compressed & successfully saved!");
+    } catch (err) {
+      console.error("Shop logo compression error:", err);
+      toast.error("Unable to process or compress logo file");
+    } finally {
       setIsLogoUploading(false);
-      toast.success(
-        "Shop logo successfully uploaded and set! Welcome to the workspace.",
-      );
-    };
-    reader.onerror = () => {
-      setIsLogoUploading(false);
-      toast.error("Unable to upload logo file");
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
-  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("File size must be strictly below 2MB");
-      return;
-    }
-
     setIsPhotoUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const avatarData = reader.result as string;
+    try {
+      // Compress any image size down to ultra-small WebP/JPEG bytes
+      const avatarData = await compressImageFile(file, { maxWidth: 400, maxHeight: 400, quality: 0.75 });
       const updatedProfile = { ...userProfile, avatar: avatarData };
       setUserProfile(updatedProfile);
       await DataService.setUserProfile(updatedProfile);
+      toast.success("Profile photo compressed & successfully saved!");
+    } catch (err) {
+      console.error("Profile photo compression error:", err);
+      toast.error("Unable to process or compress profile photo");
+    } finally {
       setIsPhotoUploading(false);
-      toast.success("Profile photo successfully uploaded and set!");
-    };
-    reader.onerror = () => {
-      setIsPhotoUploading(false);
-      toast.error("Unable to upload image file");
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleRemoveEmailShare = async (emailToRemove: string) => {
