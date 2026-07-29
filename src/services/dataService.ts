@@ -1,6 +1,5 @@
 import { Product, CartItem, Sale, Purchase, ReceiptTemplate } from '@/types';
 import { safeLocalStorage, safeSessionStorage } from '@/utils/safeStorage';
-import { compressBase64Image } from '@/utils/imageCompressor';
 
 const localStorage = safeLocalStorage;
 const sessionStorage = safeSessionStorage;
@@ -361,13 +360,6 @@ const OnlineDataService = {
       if (!finalProduct.id) {
         finalProduct.id = 'prod_' + Math.random().toString(36).substr(2, 9);
       }
-      // Guarantee image compression for any base64 image attached to product
-      if (finalProduct.imageUrl && finalProduct.imageUrl.startsWith('data:image/')) {
-        finalProduct.imageUrl = await compressBase64Image(finalProduct.imageUrl, { maxWidth: 500, maxHeight: 500, quality: 0.75 });
-      }
-      if ((finalProduct as any).image_url && (finalProduct as any).image_url.startsWith('data:image/')) {
-        (finalProduct as any).image_url = await compressBase64Image((finalProduct as any).image_url, { maxWidth: 500, maxHeight: 500, quality: 0.75 });
-      }
       const res = await apiFetch(`${API_BASE}/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -538,9 +530,6 @@ const OnlineDataService = {
       if (details && details.name && details.name.trim().toUpperCase() === 'AS WEB INFO') {
         details.name = 'AS Web Info POS Workspace';
       }
-      if (details && details.logo && details.logo.startsWith('data:image/')) {
-        details.logo = await compressBase64Image(details.logo, { maxWidth: 500, maxHeight: 500, quality: 0.75 });
-      }
       saveLocalConfig('shopDetails', JSON.stringify(details));
       await apiFetch(`${API_BASE}/config/shopDetails`, {
         method: 'POST',
@@ -647,9 +636,6 @@ const OnlineDataService = {
 
   setUserProfile: async (profile: { name: string; email: string; avatar?: string }) => {
     try {
-      if (profile && profile.avatar && profile.avatar.startsWith('data:image/')) {
-        profile.avatar = await compressBase64Image(profile.avatar, { maxWidth: 400, maxHeight: 400, quality: 0.75 });
-      }
       saveLocalConfig('userProfile', JSON.stringify(profile));
       await apiFetch(`${API_BASE}/config/userProfile`, {
         method: 'POST',
