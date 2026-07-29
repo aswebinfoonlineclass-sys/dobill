@@ -145,17 +145,17 @@ const getBackendUrl = (url: string): string => {
 
     // In Android APK / Capacitor / Android Studio Emulator, origin is "https://localhost" or "http://localhost".
     // Directing relative API requests to localhost on mobile fails because no backend runs inside the phone.
-    // Automatically point to the live Render production backend (https://dobill2.onrender.com) for mobile & Capacitor builds.
+    // Automatically point to the live Render production backend (https://dobill2-pl2w.onrender.com/) for mobile & Capacitor builds.
     if (isCapacitorOrNative) {
       const path = url.startsWith('/') ? url : `/${url}`;
-      return `https://dobill2.onrender.com${path}`;
+      return `https://dobill2-pl2w.onrender.com/${path}`;
     }
 
     return `${origin}${url}`;
   }
 
   const path = url.startsWith('/') ? url : `/${url}`;
-  return `https://dobill2.onrender.com${path}`;
+  return `https://dobill2-pl2w.onrender.com/${path}`;
 };
 
 // Global transparent native/web window.fetch wrapper with Proxy to reliably bypass Response read-only property constraints
