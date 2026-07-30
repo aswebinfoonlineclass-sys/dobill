@@ -95,7 +95,7 @@ function createWindow() {
   // Give the Express server a moment to start, then load the live web URL (for real-time sync)
   // falling back to local offline mode if there is no internet connection.
   setTimeout(() => {
-    const hostedUrl = 'https://dobill2.onrender.com/';
+    const hostedUrl = 'https://dobill2-pl2w.onrender.com/';
     mainWindow.loadURL(hostedUrl).catch((err) => {
       console.log('Failed to load live cloud URL, falling back to local offline mode:', err.message);
       mainWindow.loadURL('http://localhost:3000').catch((localErr) => {
