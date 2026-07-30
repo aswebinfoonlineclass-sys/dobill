@@ -53,6 +53,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ReceiptTemplate } from './ReceiptTemplate';
 import { safeLocalStorage } from '@/utils/safeStorage';
 import { handlePrint, DirectPrintService } from '@/services/directPrintService';
+import { PrinterPickerModal } from './PrinterPickerModal';
 import { getTranslation, LanguageType } from '@/utils/lang';
 
 const localStorage = safeLocalStorage;
@@ -120,6 +121,7 @@ export default function POS() {
   const [saleDate, setSaleDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showPrinterPicker, setShowPrinterPicker] = useState(false);
   const [shopDetails, setShopDetails] = useState<ShopDetails | null>(null);
   const [userProfile, setUserProfile] = useState<{ name: string; email: string; avatar?: string } | null>(null);
   const lastScanned = useRef<{ code: string; time: number } | null>(null);
@@ -628,6 +630,7 @@ export default function POS() {
     const shopAddress = shopDetails?.address || '';
     const shopPhone = shopDetails?.phone || '';
     const is80 = (shopDetails?.paperSize || '80mm') === '80mm';
+    const paperVal = is80 ? '80mm' : '58mm';
     const widthVal = is80 ? '72mm' : '52mm';
 
     const customerRows = [];
@@ -679,8 +682,30 @@ export default function POS() {
     ` : '';
 
     return `
-      <div class="thermal-receipt" style="width: ${widthVal}; margin: 0 auto; color: black; background: white; font-family: 'Courier New', Courier, monospace; font-size: 11px; padding: 1mm 1mm 15mm 1mm;">
-        <div class="receipt-header" style="text-align: center; margin-bottom: 2mm;">
+      <style>
+        @media print {
+          @page {
+            margin: 0 !important;
+            size: ${paperVal} auto !important;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: ${paperVal} !important;
+            background: white !important;
+          }
+          .thermal-receipt {
+            width: ${widthVal} !important;
+            max-width: 100% !important;
+            margin: 0 auto !important;
+            padding: 1mm 1mm 2mm 1mm !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+        }
+      </style>
+      <div class="thermal-receipt" style="width: ${widthVal}; margin: 0 auto; color: black; background: white; font-family: 'Courier New', Courier, monospace; font-size: 11px; padding: 1mm 1mm 2mm 1mm; page-break-inside: avoid; break-inside: avoid;">
+        <div class="receipt-header" style="text-align: center; margin-bottom: 2mm; page-break-inside: avoid; break-inside: avoid;">
           ${shopDetails?.logo ? `
             <div style="text-align: center; margin-bottom: 2mm;">
               <img src="${shopDetails.logo}" style="height: 14mm; width: 14mm; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0; display: inline-block;" />
@@ -697,7 +722,7 @@ export default function POS() {
         
         <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
         
-        <div class="receipt-info-grid" style="font-size: 10px; margin-bottom: 2mm; width: 100%; font-weight: 600;">
+        <div class="receipt-info-grid" style="font-size: 10px; margin-bottom: 2mm; width: 100%; font-weight: 600; page-break-inside: avoid; break-inside: avoid;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 0.5mm;">
             <span>Bill No:</span>
             <span style="font-weight: bold;">${sale.invoiceNumber}</span>
@@ -719,7 +744,7 @@ export default function POS() {
         
         <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
         
-        <table class="receipt-table" style="width: 100%; border-collapse: collapse; font-size: 10px; margin: 1mm 0;">
+        <table class="receipt-table" style="width: 100%; border-collapse: collapse; font-size: 10px; margin: 1mm 0; page-break-inside: avoid; break-inside: avoid;">
           <thead>
             <tr style="border-bottom: 1.5px solid black;">
               <th style="text-align: left; padding: 1.5mm 0; font-weight: 700; text-transform: uppercase;">ITEM</th>
@@ -734,7 +759,7 @@ export default function POS() {
         
         <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
         
-        <div class="totals-area" style="font-size: 11px; padding: 1mm 0; font-weight: 700;">
+        <div class="totals-area" style="font-size: 11px; padding: 1mm 0; font-weight: 700; page-break-inside: avoid; break-inside: avoid;">
           <div style="display: flex; justify-content: space-between;">
             <span>Subtotal:</span>
             <span>₹${sale.subtotal.toFixed(2)}</span>
@@ -751,7 +776,7 @@ export default function POS() {
         
         <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
         
-        <div class="payment-info" style="font-size: 10px; margin-top: 1.5mm; font-weight: 600;">
+        <div class="payment-info" style="font-size: 10px; margin-top: 1.5mm; font-weight: 600; page-break-inside: avoid; break-inside: avoid;">
           <div style="display: flex; justify-content: space-between; text-transform: uppercase;">
             <span>Mode:</span>
             <span style="font-weight: 900;">${sale.paymentMode}</span>
@@ -761,10 +786,10 @@ export default function POS() {
         
         <div class="receipt-sep" style="border-top: 1px dashed black; margin: 2mm 0; width: 100%;"></div>
         
-        <div class="receipt-footer" style="text-align: center; margin-top: 4mm; font-size: 9px; padding-bottom: 10mm;">
+        <div class="receipt-footer" style="text-align: center; margin-top: 2mm; font-size: 9px; padding-bottom: 1mm; page-break-inside: avoid; break-inside: avoid;">
           <p style="font-weight: 900; font-size: 11px; margin-bottom: 0.5mm;">THANK YOU FOR SHOPPING!</p>
           <p style="font-size: 8px; margin-top: 1mm; font-weight: bold;">Items once sold cannot be returned.</p>
-          <p style="font-size: 8px; margin-top: 3mm; border-top: 1px solid black; padding-top: 1.5mm; font-weight: bold;">POWERED BY DO BILL</p>
+          <p style="font-size: 8px; margin-top: 2mm; border-top: 1px solid black; padding-top: 1mm; font-weight: bold;">POWERED BY DO BILL</p>
         </div>
       </div>
     `;
@@ -1003,15 +1028,25 @@ export default function POS() {
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button 
+              variant="default" 
+              size="sm" 
+              className="flex-1 sm:flex-none h-8 text-[10px] font-black uppercase tracking-tight gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={() => setShowPrinterPicker(true)}
+            >
+              <Printer className="h-3.5 w-3.5" /> PRINTER SETUP
+            </Button>
+            <Button 
               variant="outline" 
               size="sm" 
-              className="flex-1 sm:flex-none h-8 text-[10px] font-black uppercase tracking-tight gap-2"
+              className="flex-1 sm:flex-none h-8 text-[10px] font-black uppercase tracking-tight gap-1.5"
               onClick={handleTestPrint}
             >
-              <Printer className="h-3.5 w-3.5" /> RUN TEST PRINT
+              RUN TEST PRINT
             </Button>
           </div>
         </div>
+
+        <PrinterPickerModal open={showPrinterPicker} onOpenChange={setShowPrinterPicker} />
 
         <div className="flex flex-col md:grid md:grid-cols-12 gap-4 lg:gap-6 flex-1 min-h-0">
           {/* Search & Cart Area */}
