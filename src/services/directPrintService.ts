@@ -1,5 +1,9 @@
 import { Sale } from '../types';
 import { ShopDetails, DataService } from './dataService';
+import { safeLocalStorage, safeSessionStorage } from '@/utils/safeStorage';
+
+const localStorage = safeLocalStorage;
+const sessionStorage = safeSessionStorage;
 
 let activeUSBDevice: USBDevice | null = null;
 let activeSerialPort: any = null; // SerialPort is not globally typed in standard TS without dom-webcodecs
@@ -804,78 +808,105 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
  * Universal print function that works on Web, Android WebView, Capacitor APK, and Desktop
  */
 export const universalPrintHTML = async (htmlContent: string): Promise<{ success: boolean; message: string }> => {
-  // Fallback 1: Hidden Iframe Printing (Works in almost all Mobile/Android WebViews and browsers)
-  try {
-    const iframe = document.createElement('iframe');
-    iframe.id = 'dobill-universal-print-iframe';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    iframe.style.zIndex = '-9999';
-    document.body.appendChild(iframe);
+  if (!htmlContent) return { success: false, message: "No HTML content provided to printer" };
 
-    const doc = iframe.contentWindow?.document || iframe.contentDocument;
-    if (doc) {
-      doc.open();
-      doc.write(htmlContent);
-      doc.close();
-
-      await new Promise((res) => setTimeout(res, 400));
-
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-
-      setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      }, 3000);
-
-      return { success: true, message: "Print Command Sent" };
+  const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+  if (isElectron) {
+    try {
+      await (window as any).electronAPI.printSilent(htmlContent);
+      return { success: true, message: "Print Successful" };
+    } catch (err: any) {
+      console.error('[DirectPrint] Electron silent print error:', err);
+      return { success: false, message: `Electron Print Error: ${err.message || err}` };
     }
-  } catch (iframeErr) {
-    console.warn('[DirectPrint] Iframe print failed, trying overlay print:', iframeErr);
   }
 
-  // Fallback 2: Document Overlay Printing
-  try {
-    const printContainer = document.createElement('div');
-    printContainer.id = 'dobill-universal-print-container';
-    printContainer.className = 'barcode-print-overlay';
-    printContainer.style.position = 'absolute';
-    printContainer.style.left = '0';
-    printContainer.style.top = '0';
-    printContainer.style.width = '100%';
-    printContainer.style.zIndex = '99999';
-    printContainer.style.background = 'white';
-    printContainer.innerHTML = htmlContent;
+  const isCapacitorNative = typeof window !== 'undefined' && (
+    (window as any).Capacitor?.isNativePlatform?.() === true ||
+    (window as any).Capacitor?.getPlatform?.() === 'android' ||
+    window.location.protocol === 'capacitor:' ||
+    /android/i.test(navigator.userAgent)
+  );
 
-    const style = document.createElement('style');
-    style.id = 'dobill-universal-print-style';
-    style.innerHTML = `
-      @media print {
-        #root, .no-print, body > *:not(#dobill-universal-print-container) { display: none !important; }
-        #dobill-universal-print-container { display: block !important; width: 100% !important; }
+  // 1. Prepare DOM container for printing
+  const printContainer = document.createElement('div');
+  printContainer.id = 'dobill-universal-print-container';
+  printContainer.className = 'print-container-overlay';
+  printContainer.style.position = 'absolute';
+  printContainer.style.left = '0';
+  printContainer.style.top = '0';
+  printContainer.style.width = '100%';
+  printContainer.style.zIndex = '999999';
+  printContainer.style.background = 'white';
+  printContainer.innerHTML = htmlContent;
+
+  const style = document.createElement('style');
+  style.id = 'dobill-universal-print-style';
+  style.innerHTML = `
+    @media print {
+      #root, .no-print, [role="dialog"], [data-radix-portal], [data-sonner-toaster] {
+        display: none !important;
       }
-    `;
+      #dobill-universal-print-container {
+        display: block !important;
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+      }
+    }
+  `;
 
-    document.head.appendChild(style);
-    document.body.appendChild(printContainer);
+  document.head.appendChild(style);
+  document.body.appendChild(printContainer);
+  document.body.classList.add('printing-active');
 
-    window.print();
+  // Short delay for DOM render
+  await new Promise((resolve) => setTimeout(resolve, 150));
 
-    setTimeout(() => {
-      if (document.body.contains(printContainer)) document.body.removeChild(printContainer);
-      if (document.head.contains(style)) document.head.removeChild(style);
-    }, 2000);
+  let printHandled = false;
 
-    return { success: true, message: "Print Triggered" };
-  } catch (windowErr: any) {
-    return { success: false, message: `Print failed: ${windowErr.message || windowErr}` };
+  // 2. Capacitor Android Print Plugin
+  if (isCapacitorNative) {
+    try {
+      const { Print } = await import('capacitor-print');
+      if (Print && typeof Print.print === 'function') {
+        await Print.print();
+        printHandled = true;
+      }
+    } catch (pluginErr) {
+      console.warn('[DirectPrint] Capacitor Print plugin call failed, falling back to window.print:', pluginErr);
+    }
   }
+
+  // 3. Standard Browser Fallback
+  if (!printHandled) {
+    try {
+      window.print();
+      printHandled = true;
+    } catch (wErr) {
+      console.error('[DirectPrint] window.print fallback failed:', wErr);
+    }
+  }
+
+  // Cleanup after print dialog opens
+  setTimeout(() => {
+    document.body.classList.remove('printing-active');
+    if (document.body.contains(printContainer)) {
+      document.body.removeChild(printContainer);
+    }
+    if (document.head.contains(style)) {
+      document.head.removeChild(style);
+    }
+  }, 2500);
+
+  return {
+    success: printHandled,
+    message: printHandled ? "Print Interface Opened Successfully" : "Failed to trigger print interface"
+  };
 };
 
 /**
@@ -926,11 +957,6 @@ export const handlePrint = async (sale: Sale): Promise<{ success: boolean; messa
 
   // 2. Platform Detection
   const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
-  const isAndroid = typeof window !== 'undefined' && (
-    !!(window as any).Capacitor || 
-    window.location.protocol === 'capacitor:' || 
-    /android/i.test(navigator.userAgent)
-  );
 
   if (isElectron) {
     // 3. Electron - Silent Native Thermal Print
@@ -946,158 +972,63 @@ export const handlePrint = async (sale: Sale): Promise<{ success: boolean; messa
       console.error('[DirectPrint] Electron print error:', err);
       return { success: false, message: "Printer Not Connected" };
     }
-  } else if (isAndroid) {
-    // 4. Android (Capacitor) - direct printing via Bluetooth/USB/Serial
-    if (DirectPrintService.isPrinterConnected()) {
-      try {
-        await DirectPrintService.printReceiptDirect(sale, shopDetails);
-        return { success: true, message: "Print Successful" };
-      } catch (err: any) {
-        console.error('[DirectPrint] Android physical print error:', err);
-      }
-    }
-
-    // Fallback: Trigger Native Android Print Manager
-    const isCapacitorNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
-    if (isCapacitorNative) {
-      try {
-        const is80 = (shopDetails?.paperSize || '80mm') === '80mm';
-        const paperWidth = is80 ? '80mm' : '58mm';
-        const printableWidth = is80 ? '72mm' : '52mm';
-
-        const fullHTML = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <style>
-                @media print, screen {
-                  @page {
-                    margin: 0 !important;
-                    size: ${paperWidth} auto !important;
-                  }
-                  html, body {
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    width: ${paperWidth} !important;
-                    background: white !important;
-                    -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
-                    color: black !important;
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-                  }
-                  .thermal-receipt {
-                    width: ${printableWidth} !important;
-                    max-width: ${printableWidth} !important;
-                    margin: 0 auto !important;
-                    padding: 1mm 1mm 2mm 1mm !important;
-                    box-sizing: border-box !important;
-                    page-break-inside: avoid !important;
-                    break-inside: avoid !important;
-                  }
-                }
-              </style>
-            </head>
-            <body>
-              <div class="thermal-receipt">
-                ${buildReceiptHTML(sale, shopDetails, userProfile)}
-              </div>
-            </body>
-          </html>
-        `;
-        return await universalPrintHTML(fullHTML);
-      } catch (err: any) {
-        console.error('[DirectPrint] Capacitor print fallback error:', err);
-        return { success: false, message: `Native Print failed: ${err.message || err}` };
-      }
-    } else {
-      return { success: false, message: "Printer Not Connected" };
-    }
-  } else {
-    // 5. Web fallback
-    if (DirectPrintService.isPrinterConnected()) {
-      try {
-        await DirectPrintService.printReceiptDirect(sale, shopDetails);
-        return { success: true, message: "Print Successful" };
-      } catch (err: any) {
-        console.warn('[DirectPrint] Web physical print failed, falling back to browser print:', err);
-      }
-    }
-
-    // Fallback to Web Browser Printing Dialogue using the common template
-    return new Promise<{ success: boolean; message: string }>((resolve) => {
-      const is80 = (shopDetails?.paperSize || '80mm') === '80mm';
-      const paperWidth = is80 ? '80mm' : '58mm';
-      const printableWidth = is80 ? '72mm' : '52mm';
-
-      const printStyle = document.createElement('style');
-      printStyle.id = 'dobill-dynamic-pos-print-style';
-      printStyle.innerHTML = `
-        @media print {
-          @page {
-            margin: 0 !important;
-            size: ${paperWidth} auto !important;
-          }
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            width: ${paperWidth} !important;
-            background: white !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color: black !important;
-          }
-          #root, .no-print {
-            display: none !important;
-          }
-          .print-container-overlay {
-            display: block !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: ${paperWidth} !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-          }
-          .thermal-receipt {
-            width: ${printableWidth} !important;
-            max-width: ${printableWidth} !important;
-            margin: 0 auto !important;
-            padding: 1mm 1mm 2mm 1mm !important;
-            box-sizing: border-box !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-        }
-      `;
-      document.head.appendChild(printStyle);
-
-      const htmlContent = buildReceiptHTML(sale, shopDetails, userProfile);
-      const printContainer = document.createElement('div');
-      printContainer.className = 'print-container-overlay';
-      printContainer.innerHTML = htmlContent;
-      document.body.appendChild(printContainer);
-
-      document.body.classList.add('printing-active');
-
-      setTimeout(() => {
-        try {
-          window.print();
-          resolve({ success: true, message: "Print Successful" });
-        } catch (err) {
-          console.error("[DirectPrint] Browser fallback print failed:", err);
-          resolve({ success: false, message: "Printer Not Connected" });
-        } finally {
-          document.body.classList.remove('printing-active');
-          if (document.body.contains(printContainer)) {
-            document.body.removeChild(printContainer);
-          }
-          if (document.head.contains(printStyle)) {
-            document.head.removeChild(printStyle);
-          }
-        }
-      }, 150);
-    });
   }
+
+  // 4. Physical thermal printer connection (Bluetooth/USB/Serial)
+  if (DirectPrintService.isPrinterConnected()) {
+    try {
+      await DirectPrintService.printReceiptDirect(sale, shopDetails);
+      return { success: true, message: "Print Successful" };
+    } catch (err: any) {
+      console.error('[DirectPrint] Physical thermal print error:', err);
+    }
+  }
+
+  // 5. Android Print Framework (Capacitor) or Browser Print Fallback
+  const is80 = (shopDetails?.paperSize || '80mm') === '80mm';
+  const paperWidth = is80 ? '80mm' : '58mm';
+  const printableWidth = is80 ? '72mm' : '52mm';
+
+  const fullHTML = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          @media print, screen {
+            @page {
+              margin: 0 !important;
+              size: ${paperWidth} auto !important;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: ${paperWidth} !important;
+              background: white !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              color: black !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            }
+            .thermal-receipt {
+              width: ${printableWidth} !important;
+              max-width: ${printableWidth} !important;
+              margin: 0 auto !important;
+              padding: 1mm 1mm 2mm 1mm !important;
+              box-sizing: border-box !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="thermal-receipt">
+          ${buildReceiptHTML(sale, shopDetails, userProfile)}
+        </div>
+      </body>
+    </html>
+  `;
+
+  return await universalPrintHTML(fullHTML);
 };
