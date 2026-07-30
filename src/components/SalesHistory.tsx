@@ -381,7 +381,6 @@ export default function SalesHistory() {
     `;
 
     const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
-    const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() === true;
 
     if (isElectron) {
       const toastId = toast.loading("🖨️ Electron silent statement printing initialized...");
@@ -394,7 +393,7 @@ export default function SalesHistory() {
         console.error("Electron statement print error:", err);
         toast.error("Printing failed. Make sure a default printer is selected in the system.");
       }
-    } else if (isCapacitor) {
+    } else {
       const toastId = toast.loading("🖨️ Opening native print manager...");
       try {
         const { universalPrintHTML } = await import('@/services/directPrintService');
@@ -407,27 +406,9 @@ export default function SalesHistory() {
         }
       } catch (err: any) {
         toast.dismiss(toastId);
-        console.error("Capacitor statement print error:", err);
+        console.error("Statement print error:", err);
         toast.error(`Print failed: ${err.message || err}`);
       }
-    } else {
-      const printWindow = window.open('', '_blank', 'width=1000,height=800');
-      if (!printWindow) {
-        toast.error('Print window was blocked by browser. Please allow popup access.');
-        return;
-      }
-      printWindow.document.write(fullHTML);
-      printWindow.document.write(`
-        <script>
-          window.onload = () => {
-            setTimeout(() => {
-              window.print();
-            }, 400);
-          };
-        </script>
-      `);
-      printWindow.document.close();
-      toast.success('Launch PDF print stylesheet!');
     }
   };
 
