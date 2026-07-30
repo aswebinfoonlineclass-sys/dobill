@@ -810,6 +810,7 @@ export function buildReceiptHTML(sale: Sale, shopDetails?: ShopDetails | null, u
 export const universalPrintHTML = async (htmlContent: string): Promise<{ success: boolean; message: string }> => {
   if (!htmlContent) return { success: false, message: "No HTML content provided to printer" };
 
+  // 1. Windows / Electron Desktop Printing (Untouched)
   const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
   if (isElectron) {
     try {
@@ -821,14 +822,13 @@ export const universalPrintHTML = async (htmlContent: string): Promise<{ success
     }
   }
 
-  const isCapacitorNative = typeof window !== 'undefined' && (
-    (window as any).Capacitor?.isNativePlatform?.() === true ||
-    (window as any).Capacitor?.getPlatform?.() === 'android' ||
-    window.location.protocol === 'capacitor:' ||
-    /android/i.test(navigator.userAgent)
-  );
+  // Clean up any stale print containers from previous print runs
+  const oldContainer = document.getElementById('dobill-universal-print-container');
+  if (oldContainer) oldContainer.remove();
+  const oldStyle = document.getElementById('dobill-universal-print-style');
+  if (oldStyle) oldStyle.remove();
 
-  // 1. Prepare DOM container for printing
+  // 2. Prepare DOM container for Android / Web printing
   const printContainer = document.createElement('div');
   printContainer.id = 'dobill-universal-print-container';
   printContainer.className = 'print-container-overlay';
@@ -864,44 +864,86 @@ export const universalPrintHTML = async (htmlContent: string): Promise<{ success
   document.body.appendChild(printContainer);
   document.body.classList.add('printing-active');
 
-  // Short delay for DOM render
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  // Short delay to allow DOM & styles to render completely
+  await new Promise((resolve) => setTimeout(resolve, 200));
 
   let printHandled = false;
 
-  // 2. Capacitor Android Print Plugin
-  if (isCapacitorNative) {
+  // 3. Android Capacitor APK Platform Detection & Print Trigger
+  const Capacitor = typeof window !== 'undefined' ? (window as any).Capacitor : null;
+  const isCapacitorNative = !!(
+    Capacitor?.isNativePlatform?.() === true ||
+    Capacitor?.getPlatform?.() === 'android' ||
+    (typeof window !== 'undefined' && window.location.protocol === 'capacitor:')
+  );
+
+  if (isCapacitorNative || Capacitor?.Plugins?.Print) {
     try {
-      const { Print } = await import('capacitor-print');
-      if (Print && typeof Print.print === 'function') {
-        await Print.print();
+      // Direct plugin bridge call or module import
+      if (Capacitor?.Plugins?.Print?.print) {
+        await Capacitor.Plugins.Print.print();
         printHandled = true;
+      } else {
+        const { Print } = await import('capacitor-print');
+        if (Print && typeof Print.print === 'function') {
+          await Print.print();
+          printHandled = true;
+        }
       }
-    } catch (pluginErr) {
-      console.warn('[DirectPrint] Capacitor Print plugin call failed, falling back to window.print:', pluginErr);
+    } catch (pluginErr: any) {
+      console.warn('[DirectPrint] Capacitor Print plugin call failed, attempting fallback:', pluginErr);
     }
   }
 
-  // 3. Standard Browser Fallback
+  // 4. Fallback to Browser Print Manager (For Android Web / WebViews)
   if (!printHandled) {
     try {
       window.print();
       printHandled = true;
     } catch (wErr) {
       console.error('[DirectPrint] window.print fallback failed:', wErr);
+      // Extra fallback: hidden iframe printing
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0px';
+        iframe.style.height = '0px';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+        if (iframeDoc) {
+          iframeDoc.open();
+          iframeDoc.write(htmlContent);
+          iframeDoc.close();
+          setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+          }, 300);
+          printHandled = true;
+        }
+      } catch (iframeErr) {
+        console.error('[DirectPrint] Iframe print fallback failed:', iframeErr);
+      }
     }
   }
 
-  // Cleanup after print dialog opens
+  // Remove screen overlay state quickly so app UI returns to normal
   setTimeout(() => {
     document.body.classList.remove('printing-active');
+  }, 3000);
+
+  // Keep printContainer in DOM for 2 minutes so Android Print Spooler background process
+  // has full access to HTML elements when generating the print PDF
+  setTimeout(() => {
     if (document.body.contains(printContainer)) {
       document.body.removeChild(printContainer);
     }
     if (document.head.contains(style)) {
       document.head.removeChild(style);
     }
-  }, 2500);
+  }, 120000);
 
   return {
     success: printHandled,
