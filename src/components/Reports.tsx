@@ -354,7 +354,7 @@ export default function Reports() {
             console.error("Electron print error:", err);
             toast.error("Failed to print silently. Ensure default printer is connected.");
           }
-        } else {
+        } else if (isCapacitor) {
           const toastId = toast.loading("🖨️ Opening native print manager...");
           try {
             const { universalPrintHTML } = await import('@/services/directPrintService');
@@ -367,11 +367,13 @@ export default function Reports() {
             }
           } catch (err: any) {
             toast.dismiss(toastId);
-            console.error("Report print error:", err);
+            console.error("Capacitor print error:", err);
             toast.error(`Print failed: ${err.message || err}`);
           }
         }
       }
+    } else {
+      window.print();
     }
   };
 
